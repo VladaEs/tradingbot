@@ -1,0 +1,10 @@
+# config/strategies/simple_ma.yaml
+symbol: BTC/USDT
+timeframe: 15m
+
+fast_period: 20
+slow_period: 50
+
+risk_per_trade: 0.01
+max_position_size: 0.10
+stop_loss_percent: 0.02
