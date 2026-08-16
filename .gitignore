@@ -1,0 +1,33 @@
+# Virtual environment currently stored in the project root
+Lib/
+Scripts/
+Include/
+pyvenv.cfg
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+
+# Testing and tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE settings
+.vscode/
+.idea/
+
+# Environment variables and secrets
+.env
+.env.*
+
+# Packaging output
+build/
+dist/
+*.egg-info/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
