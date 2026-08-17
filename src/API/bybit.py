@@ -1,54 +1,108 @@
-import hashlib
-import time
-import hmac
+from decimal import Decimal
+from typing import Any, Literal
 
-from src.API.HTTPClient import HTTPClient
+from pybit.unified_trading import HTTP
 
-class BybitAPI: 
+from src.API.base import ExchangeConnector
 
-    http_client = HTTPClient(base_url="https://api.bybit.com")
 
-    def __init__(self, api_key: str, api_secret: str):
-        self.api_key = api_key
-        self.api_secret = api_secret
-        
+class BybitAPI(ExchangeConnector):
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        *,
+        testnet: bool = True,
+    ) -> None:
+        session_options: dict[str, Any] = {"testnet": testnet}
 
-    async def get_server_time(self) -> dict:
-        response = await self.http_client.get(
-            "/v5/market/time"
+        if api_key and api_secret:
+            session_options.update(
+                api_key=api_key,
+                api_secret=api_secret,
+            )
+
+        self._session = HTTP(**session_options)
+
+    @staticmethod
+    def _result(response: dict[str, Any]) -> dict[str, Any]:
+        if response.get("retCode") != 0:
+            raise RuntimeError(
+                f"Bybit error {response.get('retCode')}: "
+                f"{response.get('retMsg', 'Unknown error')}"
+            )
+
+        return response["result"]
+
+    def get_server_time(self) -> int:
+        response = self._session.get_server_time()
+        result = self._result(response)
+        return int(result["timeSecond"]) * 1_000
+
+    def get_candles(
+        self,
+        symbol: str,
+        interval: str,
+        *,
+        category: str = "linear",
+        limit: int = 200,
+    ) -> list[list[str]]:
+        if not 1 <= limit <= 1_000:
+            raise ValueError("limit must be between 1 and 1000")
+
+        response = self._session.get_kline(
+            category=category,
+            symbol=symbol.upper(),
+            interval=interval,
+            limit=limit,
         )
-        return response.json()
+        candles = self._result(response)["list"]
 
-    def get_ticker(self, symbol: str):
-        url = f"/v2/public/tickers?symbol={symbol}"
-        response = self.http_client.get(url)
-        return response.json()
+        # Bybit returns the newest candle first.
+        return list(reversed(candles))
 
-    def place_order(self, symbol: str, side: str, order_type: str, qty: float, price: float = None):
-        url = f"/v2/private/order/create"
-        payload = {
-            "api_key": self.api_key,
-            "symbol": symbol,
+    def get_ticker(
+        self,
+        symbol: str,
+        *,
+        category: str = "linear",
+    ) -> dict[str, Any]:
+        response = self._session.get_tickers(
+            category=category,
+            symbol=symbol.upper(),
+        )
+        tickers = self._result(response)["list"]
+
+        if not tickers:
+            raise LookupError(f"No ticker returned for {symbol}")
+
+        return tickers[0]
+
+    def place_order(
+        self,
+        symbol: str,
+        side: Literal["Buy", "Sell"],
+        quantity: Decimal,
+        *,
+        category: str = "linear",
+        order_type: Literal["Market", "Limit"] = "Market",
+        price: Decimal | None = None,
+    ) -> dict[str, Any]:
+        if quantity <= 0:
+            raise ValueError("quantity must be positive")
+        if order_type == "Limit" and price is None:
+            raise ValueError("price is required for a limit order")
+
+        order: dict[str, Any] = {
+            "category": category,
+            "symbol": symbol.upper(),
             "side": side,
-            "order_type": order_type,
-            "qty": qty,
-            "price": price,
-            "timestamp": int(time.time() * 1000)
+            "orderType": order_type,
+            "qty": str(quantity),
         }
-        payload["sign"] = self._generate_signature(payload)
-        response = self.http_client.post(url, data=payload)
-        return response.json()
 
-    def _generate_signature(self, params: dict) -> str:
-        sorted_params = sorted(params.items())
-        query_string = "&".join(f"{key}={value}" for key, value in sorted_params)
-        signature = hmac.new(
-            self.api_secret.encode('utf-8'),
-            query_string.encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
-        return signature
+        if price is not None:
+            order["price"] = str(price)
 
-
-    async def close(self) -> None:
-        await self.http_client.close()
+        response = self._session.place_order(**order)
+        return self._result(response)

@@ -4,6 +4,8 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "ccxt",
+    "pybit",
+    "python-dotenv",
     "pydantic>=2",
     "pydantic-settings",
     "PyYAML",
