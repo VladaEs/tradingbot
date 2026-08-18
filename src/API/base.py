@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from decimal import Decimal
 from typing import Any, Literal
 
+from shared.CandleSeries import CandleSeries
+
 
 class ExchangeConnector(ABC):
     """Common interface implemented by every exchange connector."""
@@ -20,6 +22,17 @@ class ExchangeConnector(ABC):
         limit: int = 200,
     ) -> list[list[str]]:
         """Return candles ordered from oldest to newest."""
+
+    @abstractmethod
+    def fetch_klines_paged(
+        self,
+        symbol: str,
+        interval: str,
+        *,
+        total_bars: int = 100_000,
+        category: str = "linear",
+    ) -> CandleSeries:
+        """Fetch candle history backwards using exchange pagination."""
 
     @abstractmethod
     def get_ticker(

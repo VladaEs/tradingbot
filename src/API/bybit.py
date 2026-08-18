@@ -1,10 +1,11 @@
 from decimal import Decimal
+import time
 from typing import Any, Literal
 
 from pybit.unified_trading import HTTP
 
 from src.API.base import ExchangeConnector
-
+from shared.CandleSeries import CandleSeries, Candle
 
 class BybitAPI(ExchangeConnector):
     def __init__(
@@ -60,6 +61,70 @@ class BybitAPI(ExchangeConnector):
 
         # Bybit returns the newest candle first.
         return list(reversed(candles))
+
+    @staticmethod
+    def _to_candle(raw_candle: list[str]) -> Candle:
+        return Candle(
+            int(raw_candle[0]),
+            float(raw_candle[1]),
+            float(raw_candle[2]),
+            float(raw_candle[3]),
+            float(raw_candle[4]),
+            float(raw_candle[5]),
+            float(raw_candle[6]),
+        )
+
+    def fetch_klines_paged(
+        self,
+        symbol: str,
+        interval: str,
+        *,
+        total_bars: int = 100_000,
+        category: str = "linear",
+    ) -> CandleSeries:
+        if total_bars <= 0:
+            raise ValueError("total_bars must be positive")
+
+        page_limit = 1_000
+        end_time = self.get_server_time()
+        candles_by_start_time: dict[int, Candle] = {}
+
+        while len(candles_by_start_time) < total_bars:
+            bars_left = total_bars - len(candles_by_start_time)
+            response = self._session.get_kline(
+                category=category,
+                symbol=symbol.upper(),
+                interval=interval,
+                limit=min(page_limit, bars_left),
+                end=end_time,
+            )
+            raw_candles = self._result(response)["list"]
+
+            if not raw_candles:
+                break
+
+            for raw_candle in raw_candles:
+                candle = self._to_candle(raw_candle)
+                candles_by_start_time[candle.get_start_time()] = candle
+
+            # Bybit returns each page from newest to oldest.
+            oldest_start_time = int(raw_candles[-1][0])
+            next_end_time = oldest_start_time - 1
+            if next_end_time >= end_time:
+                break
+
+            end_time = next_end_time
+
+            if len(raw_candles) < min(page_limit, bars_left):
+                break
+
+            time.sleep(0.2)
+
+        ordered_candles = [
+            candles_by_start_time[start_time]
+            for start_time in sorted(candles_by_start_time)
+        ]
+        return CandleSeries(ordered_candles[-total_bars:])
 
     def get_ticker(
         self,
